@@ -29,7 +29,7 @@ Official codes for ACM MM24 paper "Hi3D: Pursuing High-Resolution Image-to-3D Ge
 
 ## Citation
 ```
-@inproceedings{HaiboYangACMMM2023,
+@inproceedings{HaiboYangACMMM2024,
   title={Hi3D: Pursuing High-Resolution Image-to-3D Generation with Video Diffusion Models},
   author={Haibo Yang and Yang Chen and Yingwei Pan and Ting Yao and Zhineng Chen and Chong-Wah Ngo and Tao Mei},
   booktitle={ACM MM},
