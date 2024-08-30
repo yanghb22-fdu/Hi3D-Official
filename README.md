@@ -29,11 +29,7 @@ Official codes for ACM MM24 paper "Hi3D: Pursuing High-Resolution Image-to-3D Ge
 - [ ] Training codes and datasets.
 
 ### Preparation for inference
-1. Install packages in `environments.yaml`. We test our model on a 80G A100 GPU with 11.8 CUDA and 2.0.1 pytorch. But inference on GPUs with smaller memory (=10G) is possible.
-```angular2html
-conda env create -f environments.yaml
-conda activate hi3d
-```
+1. Install packages in `environments.yaml`. Or install following the way of the [generative-models](https://github.com/Stability-AI/generative-models) GitHub repo. We test our model on a 80G A100 GPU with 11.8 CUDA and 2.0.1 pytorch. But inference on GPUs with smaller memory (=10G) is possible.
 2. Download checkpoints [here](https://drive.google.com/file/d/1j_NEG2CPhFeRetYziWK6Qe62R5h7lG_V/view?usp=sharing) and unzip.
 ```angular2html
 unzip ckpts.zip
