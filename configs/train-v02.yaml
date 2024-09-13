@@ -1,0 +1,202 @@
+data:
+  target: sgm.data.video_dataset_stage2_degradeImages.VideoDataset
+  params:
+    base_folder: datas/OBJAVERSE-LVIS-example/images
+    depth_folder: datas/depths # not use for now
+    eval_folder: validation_set_example
+    width: 1024
+    height: 1024
+    sample_frames: 16
+    batch_size: 1 # batch size for a single gpu
+    num_workers: 1
+
+model:
+  target: vtdm.vtdm_gen_stage2_degradeImage.VideoLDM
+  base_learning_rate: 1e-5
+  params:
+    input_key: video
+    scale_factor: 0.18215
+    log_keys: caption
+    num_samples: 16
+    trained_param_keys: [all]
+    en_and_decode_n_samples_a_time: 1
+    disable_first_stage_autocast: True
+    ckpt_path: /mnt/afs_intern/yanghaibo/datas/download_checkpoints/svd_checkpoints/stable-video-diffusion-img2vid-xt/svd_xt_image_decoder_vid2vid.safetensors   ### FIXME: modify using tool_make_init_svd_to_vid2vid.py
+    
+    denoiser_config:
+      target: sgm.modules.diffusionmodules.denoiser.Denoiser
+      params:
+        scaling_config:
+          target: sgm.modules.diffusionmodules.denoiser_scaling.VScalingWithEDMcNoise
+
+    network_config:
+      target: sgm.modules.diffusionmodules.video_model.VideoUNet
+      params:
+        adm_in_channels: 512
+        num_classes: sequential
+        use_checkpoint: True
+        in_channels: 17
+        out_channels: 4
+        model_channels: 320
+        attention_resolutions: [4, 2, 1]
+        num_res_blocks: 2
+        channel_mult: [1, 2, 4, 4]
+        num_head_channels: 64
+        use_linear_in_transformer: True
+        transformer_depth: 1
+        context_dim: 1024
+        spatial_transformer_attn_type: softmax-xformers
+        extra_ff_mix_layer: True
+        use_spatial_context: True
+        merge_strategy: learned_with_images
+        video_kernel_size: [3, 1, 1]
+
+    conditioner_config:
+      target: sgm.modules.GeneralConditioner
+      params:
+        emb_models:
+          # crossattn cond (1024)
+          - is_trainable: False
+            input_key: cond_frames_without_noise
+            ucg_rate: 0.1
+            target: sgm.modules.encoders.modules.FrozenOpenCLIPImagePredictionEmbedder
+            params:
+              n_cond_frames: 1
+              n_copies: 1
+              open_clip_embedding_config:
+                target: sgm.modules.encoders.modules.FrozenOpenCLIPImageEmbedder
+                params:
+                  version: "ckpts/open_clip_pytorch_model.bin"
+                  freeze: True
+          # vector cond (256)
+          - is_trainable: False
+            input_key: elevation
+            target: sgm.modules.encoders.modules.ConcatTimestepEmbedderND
+            params:
+              outdim: 256
+          # concat cond (9)
+          - is_trainable: False
+            input_key: cond_frames
+            ucg_rate: 0.0
+            target: vtdm.encoders.DepthEmbedder
+            params:
+              shuffle_size: 3
+          # concat cond (4)
+          - input_key: cond_frames
+            is_trainable: False
+            ucg_rate: 0.1
+            target: sgm.modules.encoders.modules.VideoPredictionEmbedderWithEncoder
+            params:
+              disable_encoder_autocast: True
+              n_cond_frames: 1
+              n_copies: 1
+              is_ae: True
+              encoder_config:
+                target: sgm.models.autoencoder.AutoencoderKLModeOnly
+                params:
+                  embed_dim: 4
+                  monitor: val/rec_loss
+                  ddconfig:
+                    attn_type: vanilla-xformers
+                    double_z: True
+                    z_channels: 4
+                    resolution: 256
+                    in_channels: 3
+                    out_ch: 3
+                    ch: 128
+                    ch_mult: [1, 2, 4, 4]
+                    num_res_blocks: 2
+                    attn_resolutions: []
+                    dropout: 0.0
+                  lossconfig:
+                    target: torch.nn.Identity
+          # vector cond (256)
+          - input_key: cond_aug
+            is_trainable: False
+            target: sgm.modules.encoders.modules.ConcatTimestepEmbedderND
+            params:
+              outdim: 256
+              
+    first_stage_config:
+      target: sgm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        monitor: val/rec_loss
+        ddconfig:
+          attn_type: vanilla-xformers
+          double_z: True
+          z_channels: 4
+          resolution: 256
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult: [1, 2, 4, 4]
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+
+    loss_fn_config:
+      target: sgm.modules.diffusionmodules.loss.StandardDiffusionLoss
+      params:
+        num_frames: 16
+        batch2model_keys: [num_video_frames, image_only_indicator]
+        sigma_sampler_config:
+          target: sgm.modules.diffusionmodules.sigma_sampling.EDMSampling
+          params:
+            p_mean: 1.0
+            p_std: 1.6
+        loss_weighting_config:
+          target: sgm.modules.diffusionmodules.loss_weighting.VWeighting
+
+    sampler_config:
+      target: sgm.modules.diffusionmodules.sampling.EulerEDMSampler
+      params:
+        num_steps: 25
+        verbose: True
+        
+        discretization_config:
+          target: sgm.modules.diffusionmodules.discretizer.EDMDiscretization
+          params:
+            sigma_max: 700.0
+
+        guider_config:
+          target: sgm.modules.diffusionmodules.guiders.LinearPredictionGuider
+          params:
+            num_frames: 16
+            max_scale: 2.0
+            min_scale: 1.0
+            
+lightning:
+  trainer:
+    # gpus: "0,1,2,3,4,5,6,7"
+    gpus: "7,"
+    logger_refresh_rate: 20
+    check_val_every_n_epoch: 1
+    max_epochs: 50
+    accelerator: gpu
+    strategy: deepspeed_stage_2
+    precision: 16
+
+  callbacks:
+    image_logger:
+      target: vtdm.callbacks.ImageLogger
+      params:
+        log_on_batch_idx: True
+        increase_log_steps: False
+        log_first_step: True
+        batch_frequency: 100
+        max_images: 8
+        clamp: True
+        log_images_kwargs:
+          N: 8
+          sample: True
+          ucg_keys: [cond_frames, cond_frames_without_noise]
+
+    metrics_over_trainsteps_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        every_n_train_steps: 1000
+        save_weights_only: False
+        

@@ -117,7 +117,7 @@ class VideoLDM(DiffusionEngine):
         log = dict()
 
         frames = self.get_input(batch)
-        batch = self.add_custom_cond(batch, infer=True)
+        batch = self.add_custom_cond(batch, infer=False)
         N = min(frames.shape[0], N)
         frames = frames[:N]
         x = rearrange(frames, 'b c t h w -> (b t) c h w')
@@ -178,22 +178,22 @@ class VideoLDM(DiffusionEngine):
 
     def configure_optimizers(self):
         lr = self.learning_rate
-        # params = list(self.model.parameters())
-        names = []
-        params = []
-        for name, param in self.model.named_parameters():
-            flag = False
-            for k in self.trained_param_keys:
-                if k in name:
-                    names += [name]
-                    params += [param]
-                    flag = True
-                if flag:
-                    break
-            # if not flag:
-                # param.requires_grad = False
-        print(names)
-        
+        if 'all' in self.trained_param_keys:
+            params = list(self.model.parameters())
+        else:
+            names = []
+            params = []
+            for name, param in self.model.named_parameters():
+                flag = False
+                for k in self.trained_param_keys:
+                    if k in name:
+                        names += [name]
+                        params += [param]
+                        flag = True
+                    if flag:
+                        break
+            print(names)
+             
         for embedder in self.conditioner.embedders:
             if embedder.is_trainable:
                 params = params + list(embedder.parameters())

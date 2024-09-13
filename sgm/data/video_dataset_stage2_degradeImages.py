@@ -16,6 +16,11 @@ import torchvision.transforms as transforms
 import torchvision
 from einops import rearrange
 
+# for the degraded images
+import yaml
+from basicsr.data.degradations import circular_lowpass_kernel, random_mixed_kernels
+import math
+
 def add_margin(pil_img, color=0, size=256):
     width, height = pil_img.size
     result = Image.new(pil_img.mode, (size, size), color)
@@ -51,7 +56,7 @@ def prepare_inputs(image_path, elevation_input, crop_size=-1, image_size=256):
 
 
 class VideoTrainDataset(Dataset):
-    def __init__(self, base_folder='/data/yanghaibo/datas/OBJAVERSE-LVIS/images', width=1024, height=576, sample_frames=25):
+    def __init__(self, base_folder='/data/yanghaibo/datas/OBJAVERSE-LVIS/images', depth_folder="/mnt/drive2/3d/OBJAVERSE-DEPTH/depth256", width=1024, height=576, sample_frames=25):
         """
         Args:
             num_samples (int): Number of samples in the dataset.
@@ -59,13 +64,48 @@ class VideoTrainDataset(Dataset):
         """
         # Define the path to the folder containing video frames
         self.base_folder = base_folder
+        self.depth_folder = depth_folder
+        # self.folders1 = os.listdir(self.base_folder)
+        # self.folders2 = os.listdir(self.depth_folder)
+        # self.folders = list(set(self.folders1).intersection(set(self.folders2)))
         self.folders = os.listdir(self.base_folder)
         self.num_samples = len(self.folders)
         self.channels = 3
         self.width = width
         self.height = height
         self.sample_frames = sample_frames
-        self.elevations = [-10, 0, 10, 20, 30, 40]  
+        self.elevations = [-10, 0, 10, 20, 30, 40]
+        
+        # for degraded images
+        with open('configs/train_realesrnet_x4plus.yml', mode='r') as f:
+            opt = yaml.load(f, Loader=yaml.FullLoader)
+        self.opt = opt
+        # blur settings for the first degradation
+        self.blur_kernel_size = opt['blur_kernel_size']
+        self.kernel_list = opt['kernel_list']
+        self.kernel_prob = opt['kernel_prob']  # a list for each kernel probability
+        self.blur_sigma = opt['blur_sigma']
+        self.betag_range = opt['betag_range']  # betag used in generalized Gaussian blur kernels
+        self.betap_range = opt['betap_range']  # betap used in plateau blur kernels
+        self.sinc_prob = opt['sinc_prob']  # the probability for sinc filters
+
+        # blur settings for the second degradation
+        self.blur_kernel_size2 = opt['blur_kernel_size2']
+        self.kernel_list2 = opt['kernel_list2']
+        self.kernel_prob2 = opt['kernel_prob2']
+        self.blur_sigma2 = opt['blur_sigma2']
+        self.betag_range2 = opt['betag_range2']
+        self.betap_range2 = opt['betap_range2']
+        self.sinc_prob2 = opt['sinc_prob2']
+
+        # a final sinc filter
+        self.final_sinc_prob = opt['final_sinc_prob']
+
+        self.kernel_range = [2 * v + 1 for v in range(3, 11)]  # kernel size ranges from 7 to 21
+        # TODO: kernel range is now hard-coded, should be in the configure file
+        self.pulse_tensor = torch.zeros(21, 21).float()  # convolving with pulse tensor brings no blurry effect
+        self.pulse_tensor[10, 10] = 1
+        
 
     def __len__(self):
         return self.num_samples
@@ -100,6 +140,7 @@ class VideoTrainDataset(Dataset):
 
         # Randomly select a start index for frame sequence. Fixed elevation
         start_idx = random.randint(0, len(frames) - 1)
+        # start_idx = random.choice([0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92])
         range_id = int(start_idx / 16)  # 0, 1, 2, 3, 4, 5
         elevation = self.elevations[range_id]
         selected_frames = []
@@ -111,11 +152,14 @@ class VideoTrainDataset(Dataset):
             
         # Initialize a tensor to store the pixel values
         pixel_values = torch.empty((self.sample_frames, self.channels, self.height, self.width))
+        masks = []
 
         # Load and process each frame
         for i, frame_name in enumerate(selected_frames):
             frame_path = os.path.join(folder_path, frame_name)
             img, mask = self.load_im(frame_path)
+            mask = mask.squeeze(-1)
+            masks.append(mask)
             # Resize the image and convert it to a tensor
             img_resized = img.resize((self.width, self.height))
             img_tensor = torch.from_numpy(np.array(img_resized)).float()
@@ -134,10 +178,77 @@ class VideoTrainDataset(Dataset):
             pixel_values[i] = img_normalized
         
         pixel_values = rearrange(pixel_values, 't c h w -> c t h w')
+        masks = torch.from_numpy(np.array(masks))
+        caption = chosen_folder
         
-        caption = chosen_folder + "_" + str(start_idx)
-        
-        return {'video': pixel_values, 'elevation': elevation, 'caption': caption, "fps_id": 7, "motion_bucket_id": 127}
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! get the kernels for degraded images
+        # ------------------------ Generate kernels (used in the first degradation) ------------------------ #
+        kernels = []
+        kernel2s = []
+        sinc_kernels = []
+        for i in range(16):
+            kernel_size = random.choice(self.kernel_range)
+            if np.random.uniform() < self.opt['sinc_prob']:
+                # this sinc filter setting is for kernels ranging from [7, 21]
+                if kernel_size < 13:
+                    omega_c = np.random.uniform(np.pi / 3, np.pi)
+                else:
+                    omega_c = np.random.uniform(np.pi / 5, np.pi)
+                kernel = circular_lowpass_kernel(omega_c, kernel_size, pad_to=False)
+            else:
+                kernel = random_mixed_kernels(
+                    self.kernel_list,
+                    self.kernel_prob,
+                    kernel_size,
+                    self.blur_sigma,
+                    self.blur_sigma, [-math.pi, math.pi],
+                    self.betag_range,
+                    self.betap_range,
+                    noise_range=None)
+            # pad kernel
+            pad_size = (21 - kernel_size) // 2
+            kernel = np.pad(kernel, ((pad_size, pad_size), (pad_size, pad_size)))
+            kernels.append(kernel)
+
+            # ------------------------ Generate kernels (used in the second degradation) ------------------------ #
+            kernel_size = random.choice(self.kernel_range)
+            if np.random.uniform() < self.opt['sinc_prob2']:
+                if kernel_size < 13:
+                    omega_c = np.random.uniform(np.pi / 3, np.pi)
+                else:
+                    omega_c = np.random.uniform(np.pi / 5, np.pi)
+                kernel2 = circular_lowpass_kernel(omega_c, kernel_size, pad_to=False)
+            else:
+                kernel2 = random_mixed_kernels(
+                    self.kernel_list2,
+                    self.kernel_prob2,
+                    kernel_size,
+                    self.blur_sigma2,
+                    self.blur_sigma2, [-math.pi, math.pi],
+                    self.betag_range2,
+                    self.betap_range2,
+                    noise_range=None)
+
+            # pad kernel
+            pad_size = (21 - kernel_size) // 2
+            kernel2 = np.pad(kernel2, ((pad_size, pad_size), (pad_size, pad_size)))
+            kernel2s.append(kernel2)
+
+            # ------------------------------------- the final sinc kernel ------------------------------------- #
+            if np.random.uniform() < self.opt['final_sinc_prob']:
+                kernel_size = random.choice(self.kernel_range)
+                omega_c = np.random.uniform(np.pi / 3, np.pi)
+                sinc_kernel = circular_lowpass_kernel(omega_c, kernel_size, pad_to=21)
+                sinc_kernel = torch.FloatTensor(sinc_kernel)
+            else:
+                sinc_kernel = self.pulse_tensor
+            sinc_kernels.append(sinc_kernel)
+        kernels = np.array(kernels)
+        kernel2s = np.array(kernel2s)
+        sinc_kernels = torch.stack(sinc_kernels, 0)
+        kernels = torch.FloatTensor(kernels)
+        kernel2s = torch.FloatTensor(kernel2s)
+        return {'video': pixel_values, 'masks': masks, 'elevation': elevation, 'caption': caption, 'kernel1s': kernels, 'kernel2s': kernel2s, 'sinc_kernels': sinc_kernels}           # (16, 3, 512, 512)-> (3, 16, 512, 512)
     
 class SyncDreamerEvalData(Dataset):
     def __init__(self, image_dir):
@@ -163,9 +274,10 @@ class SyncDreamerEvalData(Dataset):
         return self.get_data_for_index(index)
 
 class VideoDataset(pl.LightningDataModule):
-    def __init__(self, base_folder, eval_folder, width, height, sample_frames, batch_size, num_workers=4, seed=0, **kwargs):
+    def __init__(self, base_folder, depth_folder, eval_folder, width, height, sample_frames, batch_size, num_workers=4, seed=0, **kwargs):
         super().__init__()
         self.base_folder = base_folder
+        self.depth_folder = depth_folder
         self.eval_folder = eval_folder
         self.width = width
         self.height = height
@@ -176,7 +288,7 @@ class VideoDataset(pl.LightningDataModule):
         self.additional_args = kwargs
 
     def setup(self):
-        self.train_dataset = VideoTrainDataset(self.base_folder, self.width, self.height, self.sample_frames)
+        self.train_dataset = VideoTrainDataset(self.base_folder, self.depth_folder, self.width, self.height, self.sample_frames)
         self.val_dataset = SyncDreamerEvalData(image_dir=self.eval_folder)
 
     def train_dataloader(self):

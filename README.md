@@ -21,12 +21,14 @@ Despite having tremendous progress in image-to-3D generation, existing methods s
 
 ## 🌟 Hi3D-codes
 
+***🎉🎉🎉 We have released the training code for the first and second stages. You can easily modify our code to finetune Stabel Video Diffusion for the image-to-video task (first stage) and the video-to-video task (second stage).***
+
 Official codes for ACM MM24 paper "Hi3D: Pursuing High-Resolution Image-to-3D Generation with Video Diffusion Models"
 - [x] First stage checkpoint release. The checkpoint is available at [here](https://drive.google.com/file/d/1z506Fdst31rCOSq5c3COydN-j4KxRdif/view?usp=sharing).
 - [x] First stage inference codes.
 - [x] Second stage checkpoint release. The checkpoint is available at [here](https://huggingface.co/hbyang/Hi3D/blob/main/second_stage.pt).
 - [x] Second stage inference codes.
-- [ ] Training codes and datasets.
+- [x] Training codes and datasets.
 
 ### Preparation for inference
 1. Install packages in `environments.yaml`. Or install following the way of the [generative-models](https://github.com/Stability-AI/generative-models) GitHub repo. We test our model on a 80G A100 GPU with 11.8 CUDA and 2.0.1 pytorch. But inference on GPUs with smaller memory (=10G) is possible.
@@ -61,9 +63,27 @@ CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v02.py \
     --image_path "demo/3.png" \
     --output_dir "outputs/3"
 ```
-
-The training scripts are still being organized and will be released once they are ready.
-
+### Training
+1. You can refer to the [Syncdreamer](https://github.com/liuyuan-pal/SyncDreamer) repository for data preparation, but our data requirements are 1024x1024. We only provide an [example dataset](https://huggingface.co/hbyang/Hi3D/blob/main/datas.zip) here. Download the example dataset and unzip.
+2. First stage training: First, download the checkpoints from [SVD](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/blob/main/svd_xt_image_decoder.safetensors). Then, modify the model.ckpt_path in the train-v01.yaml file to point to the location where you downloaded the checkpoint.
+```bash
+python train_ddp_spawn.py \
+    --base configs/train-v01.yaml \
+    --no-test True \
+    --train True \
+    --logdir outputs/logs/train-v01
+```
+3. Second stage training: First, use tool_make_init_svd_to_vid2vid.py to adapt svd_xt_image_decoder.safetensors from SVD to fit our configuration, primarily because we need to concatenate depth information. Then, modify the model.ckpt_path in the train-v02.yaml file to point to the location where you placed the modified file.
+```bash
+### modify svd to fit our config
+python tool_make_init_svd_to_vid2vid.py
+### training
+python train_ddp_spawn.py \
+    --base configs/train-v02.yaml \
+    --no-test True \
+    --train True \
+    --logdir outputs/logs/train-v02
+```
 ## Acknowledgement
 
 The Hi3D-Diffusion code is heavily based on the [generative-models](https://github.com/Stability-AI/generative-models) project.
