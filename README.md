@@ -24,8 +24,8 @@ Despite having tremendous progress in image-to-3D generation, existing methods s
 Official codes for ACM MM24 paper "Hi3D: Pursuing High-Resolution Image-to-3D Generation with Video Diffusion Models"
 - [x] First stage checkpoint release. The checkpoint is available at [here](https://drive.google.com/file/d/1z506Fdst31rCOSq5c3COydN-j4KxRdif/view?usp=sharing).
 - [x] First stage inference codes.
-- [ ] Second stage checkpoint release.
-- [ ] Second stage inference codes.
+- [x] Second stage checkpoint release. The checkpoint is available at [here](https://huggingface.co/hbyang/Hi3D/blob/main/second_stage.pt).
+- [x] Second stage inference codes.
 - [ ] Training codes and datasets.
 
 ### Preparation for inference
@@ -45,17 +45,24 @@ Hi3D-Official
     |-- dpt_hybrid_384.pt
     |-- first_stage.pt
     |-- ViT-L-14.ckpt
+    |-- second_stage.pt
     |-- open_clip_pytorch_model.bin
 ```
 2. Run Hi3D to produce multiview-consistent images.
 ```bash
+### 1. First stage
 CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v01.py \
     --denoise_checkpoint "ckpts/first_stage.pt" \
-    --image_path "demo/1.png" \
-    --output_dir "outputs/1"
+    --image_path "demo/3.png" \
+    --output_dir "outputs/3"
+### 2. Second stage
+CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v02.py \
+    --denoise_checkpoint "ckpts/second_stage.pt" \
+    --image_path "demo/3.png" \
+    --output_dir "outputs/3"
 ```
 
-The second stage and subsequent training scripts are still being organized and will be released once they are ready.
+The training scripts are still being organized and will be released once they are ready.
 
 ## Acknowledgement
 

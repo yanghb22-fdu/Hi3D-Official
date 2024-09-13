@@ -1,5 +1,5 @@
 model:
-  target: vtdm.vtdm_gen_v01.VideoLDM
+  target: vtdm.vtdm_gen_stage2_degradeImage.VideoLDM
   base_learning_rate: 1.0e-05
   params:
     input_key: video
@@ -7,10 +7,10 @@ model:
     log_keys: caption
     num_samples: 16
     trained_param_keys:
-    - diffusion_model.label_emb.0.0.weight
+    - diffusion_model.label_emb
     - .emb_layers.
-    - .time_stack.
-    en_and_decode_n_samples_a_time: 16
+    - diffusion_model.input_blocks
+    en_and_decode_n_samples_a_time: 1
     disable_first_stage_autocast: true
     denoiser_config:
       target: sgm.modules.diffusionmodules.denoiser.Denoiser
@@ -20,10 +20,10 @@ model:
     network_config:
       target: sgm.modules.diffusionmodules.video_model.VideoUNet
       params:
-        adm_in_channels: 768
+        adm_in_channels: 512
         num_classes: sequential
         use_checkpoint: true
-        in_channels: 8
+        in_channels: 17
         out_channels: 4
         model_channels: 320
         attention_resolutions:
@@ -65,14 +65,16 @@ model:
                 version: ckpts/open_clip_pytorch_model.bin
                 freeze: true
         - is_trainable: false
-          input_key: video
-          ucg_rate: 0.0
-          target: vtdm.encoders.AesEmbedder
-        - is_trainable: false
           input_key: elevation
           target: sgm.modules.encoders.modules.ConcatTimestepEmbedderND
           params:
             outdim: 256
+        - is_trainable: false
+          input_key: cond_frames
+          ucg_rate: 0.0
+          target: vtdm.encoders.DepthEmbedder
+          params:
+            shuffle_size: 3
         - input_key: cond_frames
           is_trainable: false
           ucg_rate: 0.1
@@ -80,7 +82,7 @@ model:
           params:
             disable_encoder_autocast: true
             n_cond_frames: 1
-            n_copies: 16
+            n_copies: 1
             is_ae: true
             encoder_config:
               target: sgm.models.autoencoder.AutoencoderKLModeOnly
@@ -160,5 +162,5 @@ model:
           target: sgm.modules.diffusionmodules.guiders.LinearPredictionGuider
           params:
             num_frames: 16
-            max_scale: 2.5
+            max_scale: 2.0
             min_scale: 1.0
