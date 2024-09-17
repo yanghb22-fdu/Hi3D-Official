@@ -64,7 +64,8 @@ CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v02.py \
     --output_dir "outputs/3"
 ```
 ### Training
-1. You can refer to the [Syncdreamer](https://github.com/liuyuan-pal/SyncDreamer) repository for data preparation, but our data requirements are 1024x1024. We only provide an [example dataset](https://huggingface.co/hbyang/Hi3D/blob/main/datas.zip) here. Download the example dataset and unzip.
+1. We only provide an [example dataset](https://huggingface.co/hbyang/Hi3D/blob/main/datas.zip) here. Download the example dataset and unzip. To create your own dataset from 3d models, you can use our modified version of [Syncdreamer](https://github.com/liuyuan-pal/SyncDreamer)'s blender render utility script. This script supports the usdz/fbx/glb file format. See the [script](tools/blender_script.py) for instructions on how to generate the dataset.
+
 2. First stage training: First, download the checkpoints from [SVD](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/blob/main/svd_xt_image_decoder.safetensors). Then, modify the model.ckpt_path in the train-v01.yaml file to point to the location where you downloaded the checkpoint.
 ```bash
 python train_ddp_spawn.py \
