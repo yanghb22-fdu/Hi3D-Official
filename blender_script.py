@@ -56,7 +56,7 @@ cam_data = bpy.data.cameras.new(name='CameraData')
 cam_data.lens = 35
 cam_data.sensor_width = 32
 
-cam = bpy.data.objects.new('CameraObject', cam_data)
+cam = bpy.data.objects.new('ScriptCamera', cam_data)
 cam.location = (0, args.distance, 0)
 
 scene.camera = cam
@@ -111,22 +111,6 @@ bpy.context.preferences.addons["cycles"].preferences.compute_device_type = args.
 distances = np.asarray([args.distance for _ in range(args.num_images)])
 azimuths = (np.arange(args.num_images)/args.num_images*np.pi*2).astype(np.float32)
 
-@contextmanager
-def stdout_redirected(to=os.devnull):
-    fd = sys.stdout.fileno()
-    def _redirect_stdout(to):
-        sys.stdout.close() # + implicit flush()
-        os.dup2(to.fileno(), fd) # fd writes to 'to' file
-        sys.stdout = os.fdopen(fd, 'w') # Python writes to fd
-
-    with os.fdopen(os.dup(fd), 'w') as old_stdout:
-        with open(to, 'w') as file:
-            _redirect_stdout(to=file)
-        try:
-            yield # allow code to be run with the redirected stdout
-        finally:
-            _redirect_stdout(to=old_stdout)
-
 def az_el_to_points(azimuths, elevations):
     x = np.cos(azimuths)*np.cos(elevations)
     y = np.sin(azimuths)*np.cos(elevations)
@@ -167,28 +151,39 @@ def get_calibration_matrix_K_from_blender(camera):
     return K
 
 def reset_scene():
-    for obj in bpy.data.objects:
-        if obj.type not in {"CAMERA", "LIGHT"}:
+    for obj in scene.objects:
+        if obj.name != "ScriptCamera":
             bpy.data.objects.remove(obj, do_unlink=True)
-    for material in bpy.data.materials:
-        bpy.data.materials.remove(material, do_unlink=True)
-    for texture in bpy.data.textures:
-        bpy.data.textures.remove(texture, do_unlink=True)
-    for image in bpy.data.images:
-        bpy.data.images.remove(image, do_unlink=True)
+    
+    for img in bpy.data.images:
+        bpy.data.images.remove(img)
         
 def load_model(object_path: str) -> None:
-    reset_scene()
-    
     """Loads a glb model into the scene."""
-    if object_path.endswith(".glb"):
+    if object_path.endswith(".glb") or object_path.endswith(".gltf"):
         bpy.ops.import_scene.gltf(filepath=object_path, merge_vertices=True)
     elif object_path.endswith(".fbx"):
         bpy.ops.import_scene.fbx(filepath=object_path)
-    elif object_path.endswith(".usdz"):
-        bpy.ops.wm.usd_import(filepath=object_path)
+    elif object_path.endswith(".usdz") or object_path.endswith(".usd"):
+        bpy.ops.wm.usd_import(filepath=object_path, import_cameras=False, import_lights=False)
     else:
         raise ValueError(f"Unsupported file type: {object_path}")
+
+@contextmanager
+def stdout_redirected(to=os.devnull):
+    fd = sys.stdout.fileno()
+    def _redirect_stdout(to):
+        sys.stdout.close() # + implicit flush()
+        os.dup2(to.fileno(), fd) # fd writes to 'to' file
+        sys.stdout = os.fdopen(fd, 'w') # Python writes to fd
+
+    with os.fdopen(os.dup(fd), 'w') as old_stdout:
+        with open(to, 'w') as file:
+            _redirect_stdout(to=file)
+        try:
+            yield # allow code to be run with the redirected stdout
+        finally:
+            _redirect_stdout(to=old_stdout)
 
 def scene_bbox(single_obj=None, ignore_matrix=False):
     bbox_min = (math.inf,) * 3
@@ -208,7 +203,7 @@ def scene_bbox(single_obj=None, ignore_matrix=False):
 
 def scene_root_objects():
     for obj in bpy.context.scene.objects.values():
-        if not obj.parent:
+        if not obj.parent and not isinstance(obj.data, (bpy.types.Camera)):
             yield obj
 
 def scene_meshes():
@@ -230,12 +225,14 @@ def normalize_scene():
     bpy.ops.object.select_all(action="DESELECT")
 
 def save_images(object_file: str) -> None:
+    with stdout_redirected():
+        reset_scene()
+        
     load_model(object_file)
     
     normalize_scene()
 
-    # create an empty object to track
-    empty = bpy.data.objects.new("Empty", None)
+    empty = bpy.data.objects.new("ScriptConstraint", None)
     scene.collection.objects.link(empty)
     cam_constraint.target = empty
 
@@ -254,6 +251,7 @@ def save_images(object_file: str) -> None:
                 scene.render.filepath = os.path.abspath(render_path)
                 with stdout_redirected():
                     bpy.ops.render.render(animation=False, write_still=True)
+                print('rendering {}'.format(os.path.abspath(render_path)))
 
 if __name__ == "__main__":
     c_model = 1
@@ -263,5 +261,8 @@ if __name__ == "__main__":
     
     for file in files:
         print('Processing: {} ({}/{})'.format(file, c_model, f_number))
-        save_images(file)
-        c_model += 1
+        try:
+            save_images(file)
+            c_model += 1
+        except Exception as e: 
+            print(e)
