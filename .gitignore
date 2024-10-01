@@ -1,2 +1,4 @@
 datas/
 ckpts/
+.conda
+__pycache__

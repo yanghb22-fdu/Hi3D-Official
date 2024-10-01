@@ -56,7 +56,7 @@ class StableDataModuleFromConfig(LightningDataModule):
             print("USING DUMMY DATASET: HOPE YOU'RE DEBUGGING ;)")
             print("#" * 100)
 
-    def setup(self, stage: str) -> None:
+    def setup(self, stage: None) -> None:
         print("Preparing datasets")
         if self.dummy:
             data_fn = create_dummy_dataset

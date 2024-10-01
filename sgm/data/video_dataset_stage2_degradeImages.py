@@ -287,7 +287,7 @@ class VideoDataset(pl.LightningDataModule):
         self.seed = seed
         self.additional_args = kwargs
 
-    def setup(self):
+    def setup(self, stage=None):
         self.train_dataset = VideoTrainDataset(self.base_folder, self.depth_folder, self.width, self.height, self.sample_frames)
         self.val_dataset = SyncDreamerEvalData(image_dir=self.eval_folder)
 
