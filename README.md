@@ -105,19 +105,24 @@ python train_ddp_spawn.py \
     --base configs/train-v01.yaml \
     --no-test True \
     --train True \
-    --logdir outputs/logs/train-v01
+    --logdir outputs/logs/train-v01 \
+    --outckpt ckpts
 ```
-3. Second stage training: First, use tool_make_init_svd_to_vid2vid.py to adapt svd_xt_image_decoder.safetensors from SVD to fit our configuration, primarily because we need to concatenate depth information. Then, modify the model.ckpt_path in the train-v02.yaml file to point to the location where you placed the modified file.
+3. Prepare stage 2. Modify 'ckpt_path' in train-v02.yaml to point to the ckpt generated with first stage. tool_make_init_svd_to_vid2vid.py will output the new safetensor in the ckpts folder and generate a modified train-v02.yaml with its path.
 ```bash
 ### modify svd to fit our config
 python tool_make_init_svd_to_vid2vid.py
+```
 
+3. Second stage training: modify train-v02-edited.yaml to fit your need.
+```bash
 ### training
 python train_ddp_spawn.py \
-    --base configs/train-v02.yaml \
+    --base configs/train-v02-edited.yaml \
     --no-test True \
     --train True \
-    --logdir outputs/logs/train-v02
+    --logdir outputs/logs/train-v02 \
+    --outckpt ckpts
 ```
 ## Acknowledgement
 

@@ -1,12 +1,13 @@
 import sys
 import os
+import yaml
 from safetensors.torch import load_file as load_safetensors
 
 # assert len(sys.argv) == 2, 'Args are wrong.'
 
 # input_path = sys.argv[1]
 # output_path = sys.argv[1]
-output_path = "/mnt/afs_intern/yanghaibo/datas/download_checkpoints/svd_checkpoints/stable-video-diffusion-img2vid-xt/svd_xt_image_decoder_vid2vid.safetensors"
+output_path = "ckpts/svd_xt_image_decoder_vid2vid.safetensors"
 
 # assert os.path.exists(input_path), 'Input model does not exist.'
 assert not os.path.exists(output_path), 'Output filename already exists.'
@@ -25,10 +26,12 @@ def get_node_name(name, parent_name):
         return False, ''
     return True, name[len(parent_name):]
 
-
 model = create_model(config_path='./configs/train-v02.yaml')
 
-svd_ckpt = load_safetensors('/mnt/afs_intern/yanghaibo/datas/download_checkpoints/svd_checkpoints/stable-video-diffusion-img2vid-xt/svd_xt_image_decoder.safetensors')
+with open('./configs/train-v01.yaml', 'r') as file:
+    yaml_content = yaml.safe_load(file)
+    ckpt_path = yaml_content.get('model', {}).get('params', {}).get('ckpt_path', None)
+    svd_ckpt = load_safetensors(ckpt_path)
 
 scratch_dict = model.state_dict()
 
@@ -62,4 +65,13 @@ model.load_state_dict(target_dict, strict=True)
 # torch.save(model.state_dict(), output_path)
 from safetensors.torch import load_model, save_model
 save_model(model, output_path)
+
+with open('./configs/train-v02.yaml', 'r') as file:
+    yaml_content = yaml.safe_load(file)
+
+yaml_content['model']['params']['ckpt_path'] = output_path
+
+with open('./configs/train-v02-edited.yaml', 'w') as file:
+    yaml.safe_dump(yaml_content, file)
+    
 print('Done.')
