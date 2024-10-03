@@ -50,23 +50,24 @@ rm -rf ~/miniconda3/miniconda.sh
 3. Install conda requirements
 ```bash
 cd ~/Hi3D-Official
-~/miniconda3/bin/conda env create --file environment.yml --prefix .conda -y -q
+~/miniconda3/bin/conda env create --file environments.yaml --prefix .conda -y -q
 ```
 
 4. Download weights/models/decoder
 ```bash
 cd ~/Hi3D-Official
-wget https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/main/svd_xt_image_decoder.safetensors
-wget https://huggingface.co/hbyang/Hi3D/resolve/main/ckpts.zip
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/ckpts.zip -L -o ckpts.zip
 unzip ckpts.zip
+cd ckpts
+curl https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/main/svd_xt_image_decoder.safetensors -L -o svd_xt_image_decoder.safetensors
 ```
 
 ### Inference
 1. Download stage checkpoints
 ```bash
-cd ~/Hi3D-Official
-wget https://huggingface.co/hbyang/Hi3D/resolve/main/first_stage.pt
-wget https://huggingface.co/hbyang/Hi3D/resolve/main/second_stage.pt
+cd ~/Hi3D-Official/ckpts
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/first_stage.pt -L -o first_stage.pt
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/second_stage.pt -L -o second_stage.pt
 ```
 
 2. Make sure you have the following models.
