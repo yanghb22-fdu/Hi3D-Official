@@ -30,16 +30,47 @@ Official codes for ACM MM24 paper "Hi3D: Pursuing High-Resolution Image-to-3D Ge
 - [x] Second stage inference codes.
 - [x] Training codes and datasets.
 
-### Preparation for inference
-1. Install packages in `environments.yaml`. Or install following the way of the [generative-models](https://github.com/Stability-AI/generative-models) GitHub repo. We test our model on a 80G A100 GPU with 11.8 CUDA and 2.0.1 pytorch. But inference on GPUs with smaller memory (=10G) is possible.
-2. Download checkpoints [here](https://drive.google.com/file/d/1j_NEG2CPhFeRetYziWK6Qe62R5h7lG_V/view?usp=sharing) and unzip.
-```angular2html
-unzip ckpts.zip
+### Setup
+1. git clone this repo
+```bash
+cd ~
+git clone https://github.com/yanghb22-fdu/Hi3D-Official.git
 ```
-3. Download first stage checkpoints [here](https://drive.google.com/file/d/1z506Fdst31rCOSq5c3COydN-j4KxRdif/view?usp=sharing) and put in in ckpts/.
+
+2. Install latest conda or miniconda
+```bash
+#Example On Linux
+mkdir -p ~/miniconda3
+cd ~/miniconda3	
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+rm -rf ~/miniconda3/miniconda.sh
+```
+
+3. Install conda requirements
+```bash
+cd ~/Hi3D-Official
+~/miniconda3/bin/conda env create --file environments.yaml --prefix .conda -y -q
+```
+
+4. Download weights/models/decoder
+```bash
+cd ~/Hi3D-Official
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/ckpts.zip -L -o ckpts.zip
+unzip ckpts.zip
+cd ckpts
+curl https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/main/svd_xt_image_decoder.safetensors -L -o svd_xt_image_decoder.safetensors
+```
 
 ### Inference
-1. Make sure you have the following models.
+1. Download stage checkpoints
+```bash
+cd ~/Hi3D-Official/ckpts
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/first_stage.pt -L -o first_stage.pt
+curl https://huggingface.co/hbyang/Hi3D/resolve/main/second_stage.pt -L -o second_stage.pt
+```
+
+2. Make sure you have the following models.
 ```bash
 Hi3D-Official
 |-- ckpts
@@ -50,39 +81,49 @@ Hi3D-Official
     |-- second_stage.pt
     |-- open_clip_pytorch_model.bin
 ```
-2. Run Hi3D to produce multiview-consistent images.
+3. Run Hi3D to produce multiview-consistent images.
+#### First stage
 ```bash
-### 1. First stage
 CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v01.py \
     --denoise_checkpoint "ckpts/first_stage.pt" \
     --image_path "demo/3.png" \
     --output_dir "outputs/3"
-### 2. Second stage
+```
+#### Second stage
+```bash
 CUDA_VISIBLE_DEVICES=0 python pipeline_i2v_eval_v02.py \
     --denoise_checkpoint "ckpts/second_stage.pt" \
     --image_path "demo/3.png" \
     --output_dir "outputs/3"
 ```
+
 ### Training
-1. You can refer to the [Syncdreamer](https://github.com/liuyuan-pal/SyncDreamer) repository for data preparation, but our data requirements are 1024x1024. We only provide an [example dataset](https://huggingface.co/hbyang/Hi3D/blob/main/datas.zip) here. Download the example dataset and unzip.
-2. First stage training: First, download the checkpoints from [SVD](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/blob/main/svd_xt_image_decoder.safetensors). Then, modify the model.ckpt_path in the train-v01.yaml file to point to the location where you downloaded the checkpoint.
+1. We only provide an [example dataset](https://huggingface.co/hbyang/Hi3D/blob/main/datas.zip) here. Download the example dataset and unzip. To create your own dataset from 3d models, you can use our modified version of [Syncdreamer](https://github.com/liuyuan-pal/SyncDreamer)'s blender render utility script. This script supports the usdz/fbx/glb file format. See the [script](/blender_script.py) for instructions on how to generate the dataset.
+
+2. First stage training: Modify the model.ckpt_path in the train-v01.yaml file to point to the location where you downloaded the checkpoint.
 ```bash
 python train_ddp_spawn.py \
     --base configs/train-v01.yaml \
     --no-test True \
     --train True \
-    --logdir outputs/logs/train-v01
+    --logdir outputs/logs/train-v01 \
+    --outckpt ckpts
 ```
-3. Second stage training: First, use tool_make_init_svd_to_vid2vid.py to adapt svd_xt_image_decoder.safetensors from SVD to fit our configuration, primarily because we need to concatenate depth information. Then, modify the model.ckpt_path in the train-v02.yaml file to point to the location where you placed the modified file.
+3. Prepare stage 2. Modify 'ckpt_path' in train-v02.yaml to point to the ckpt generated with first stage. tool_make_init_svd_to_vid2vid.py will output the new safetensor in the ckpts folder and generate a modified train-v02.yaml with its path.
 ```bash
 ### modify svd to fit our config
 python tool_make_init_svd_to_vid2vid.py
+```
+
+3. Second stage training: modify train-v02-edited.yaml to fit your need.
+```bash
 ### training
 python train_ddp_spawn.py \
-    --base configs/train-v02.yaml \
+    --base configs/train-v02-edited.yaml \
     --no-test True \
     --train True \
-    --logdir outputs/logs/train-v02
+    --logdir outputs/logs/train-v02 \
+    --outckpt ckpts
 ```
 ## Acknowledgement
 
